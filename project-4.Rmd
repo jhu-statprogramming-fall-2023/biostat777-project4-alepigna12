@@ -1,0 +1,519 @@
+---
+title: "Project 4 Dashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: readable
+    orientation: columns
+    source_code: embed
+    vertical_layout: scroll
+runtime: shiny
+---
+
+<style type="text/css">
+  p {font-size: 30px;}
+</style>
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+```
+
+```{r packages, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(here)
+library(tidytuesdayR)
+library(DT)
+```
+
+```{r}
+#install.packages(c("devtools"))
+library(devtools)
+#devtools::install_github("ldurazo/kaggler")
+library(readr)
+library(kaggler)
+```
+
+```{r data, eval = FALSE}
+# Test if a "data" directory exists locally; if not, create it and save the data
+if(!dir.exists(here("data"))) { 
+  dir.create(here("data"))
+  kgl_auth(creds_file = 'kaggle.json')
+  response <- kgl_datasets_download_all(owner_dataset = "piterfm/fifa-football-world-cup")
+  download.file(response[["url"]], "data/temp.zip", mode="wb")
+  unzip_result <- unzip("data/temp.zip", exdir = "data/")
+}  
+```
+
+```{r load, message = FALSE, warning = FALSE}
+# Read in the data locally (each time the R Markdown document is knit)
+rankings <- readr::read_csv("data/fifa_ranking_2022-10-06.csv")
+matches <- readr::read_csv("data/matches_1930_2022.csv")
+summary <- readr::read_csv("data/world_cup.csv")
+```
+
+# About {data-icon="fa-info"}
+
+## Column {data-width="40" data-height="30"}
+
+### 
+
+**What is the purpose of this dashboard?**
+
+<hr>
+
+This dashboard has two purposes: (1) to explore trends among FIFA World Cups (from Uruguay 1930 to Qatar 2020), and (2) to practice building dashboards with `R`.
+
+<hr>
+
+###
+
+**Data Source**
+
+<hr>
+
+This dashboard uses the [Football - FIFA World Cup, 1930 - 2022 data](https://www.kaggle.com/datasets/piterfm/fifa-football-world-cup), put together on Kaggle by [Petro](https://www.kaggle.com/piterfm).
+
+<hr>
+
+## Column {data-width="60"}
+
+### 
+
+```{r, echo=FALSE, fig.cap="Logo of the Qatar 2022 World Cup (from [Goal.com](https://www.goal.com/en-us/news/official-emblem-of-the-fifa-world-cup-2022-launched-in-qatar/ludb1jc3uiw61adxfooukpseb))", out.width = '100%'}
+knitr::include_graphics("https://assets.goal.com/v3/assets/bltcc7a7ffd2fbf71f5/blta2655f0502645083/60dbfaca5c97640f9443ca59/43d704c22d49886d2c7a8431c0adc57741e0d607.jpg?auto=webp&format=pjpg&width=3840&quality=60")
+```
+
+# Walk-Through
+
+## Column 
+------------------------------------
+<iframe
+    width="640"
+    height="480"
+    src="https://player.vimeo.com/video/897363080?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479"
+    frameborder="0"
+    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+    title="FIFA World Cup"
+>
+</iframe>
+
+
+# The Data {data-icon="fa-table"}
+===================================== 
+
+## Column {data-height=10 data-width=200 .tabset .tab-fade}
+
+-------------------------------------
+### Data Description
+This dashboard uses data from the football (soccer) World Cups 1930-2020 uploaded to this Kaggle [`Kaggle webpage](https://www.kaggle.com/datasets/piterfm/fifa-football-world-cup) by [Petro](https://www.kaggle.com/piterfm). There are three datasets:
+
+-   fifa_ranking_2022-10-06.csv contains teams ranking before Qatar 2022 World Cup.
+
+-   matches_1930_2022.csv contains all match results from 1930 to 2022.
+
+-   world_cup.csv includes summary information about each World Cup.
+
+More datils above each dataset can be found at the following links: [Fifa Rankings before Qatar 2022](https://www.kaggle.com/datasets/piterfm/fifa-football-world-cup?select=fifa_ranking_2022-10-06.csv), [Matches History](https://www.kaggle.com/datasets/piterfm/fifa-football-world-cup?select=matches_1930_2022.csv), [World Cups Summary](https://www.kaggle.com/datasets/piterfm/fifa-football-world-cup?select=world_cup.csv)
+
+Go on the next tabs to see the data.
+
+### Fifa Rankings before Qatar 2022
+```{r}
+DT::renderDataTable({
+  DT::datatable(rankings,
+                caption = "Table 1: Fifa Rankings before Qatar 2022",
+                options = list(autoWidth = TRUE,
+                               pageLength = 10,
+                               scroller = TRUE,
+                               scrollY = '500px'))
+})
+```
+
+### Matches History
+```{r}
+DT::renderDataTable({
+  DT::datatable(matches,
+                caption = "Table 2: Matches History",
+                options = list(autoWidth = TRUE,
+                               pageLength = 10,
+                               scroller = TRUE,
+                               scrollY = '500px'))
+})
+```
+
+### World Cups Summary
+```{r}
+DT::renderDataTable({
+  DT::datatable(summary,
+                caption = "Table 3: World Cups Summary",
+                options = list(autoWidth = TRUE,
+                               pageLength = 10,
+                               scroller = TRUE,
+                               scrollY = '500px'))
+})
+```
+
+# Teams at FIFA World Cup {data-icon="fa-globe"}
+
+## Column {data-width="50"}
+
+###
+
+```{r}
+#select the relevant columns from the matches dataset
+teams_per_year <- matches %>%
+  dplyr::select(Year, home_team) %>%
+  filter(!is.na(Year)) %>%
+  filter(!is.na(home_team)) %>%
+  # Filter out duplicate rows
+  dplyr::distinct()
+
+# Merge with the summary dataset to get additional information
+world_cup_summary <- left_join(summary, teams_per_year, by = "Year",multiple = "all")
+teams_per_year <- world_cup_summary %>%
+  dplyr::select(Year,Host,home_team)
+
+# Reactive expression for selected teams
+selected_teams <- reactive({
+  if (!is.null(input$plot_brush)) {
+    brushed_data <- brushedPoints(teams_per_year, input$plot_brush)
+    if (nrow(brushed_data) > 0) {
+      selected_year <- brushed_data$Year
+      # Filter teams based on the selected year
+      teams_in_year_pre <- matches %>%
+        filter(Year == selected_year) %>%
+        filter(!is.na(home_team)) %>%
+        dplyr::select(Year, home_team) %>%
+        distinct()
+      
+      teams_in_year <- left_join(summary, teams_in_year_pre, by = "Year") %>%
+        dplyr::select(Year,Host,home_team) %>%
+        rename(Team_Participant=home_team)
+    } else {
+      # If no points are brushed, show all teams in history
+      teams_in_year <- teams_per_year %>%
+        rename(Team_Participant=home_team)
+    }
+  } else {
+    # If no points are brushed, show all teams in history
+    teams_in_year <- teams_per_year %>%
+        rename(Team_Participant=home_team)
+  }
+  teams_in_year
+})
+
+# Plot the number of teams over time
+plotOutput("brushplot", brush = brushOpts(id = "plot_brush"))
+
+output$brushplot <- renderPlot({
+  ggplot(world_cup_summary, aes(x = Year)) +
+    geom_line(aes(y = Teams)) +
+    geom_point(aes(y = Teams)) + 
+    scale_y_continuous(labels = scales::comma) +
+    labs(title = "Number of Teams at Each World Cup",
+         subtitle = "Number of teams has increased in early years and has been the same fora while now. In fact, it will increase for 2026",
+         x = "Year",
+         y = "Number of Teams") +
+  theme_minimal()
+})
+```
+
+
+## Column {data-width="50"}
+
+###
+
+```{r teams DT, message = FALSE, warning = FALSE}
+DT::renderDataTable({
+  DT::datatable(selected_teams(),
+                caption = "Table: Participant Teams for each World Cup (Year, Host)",
+                options = list(autoWidth = TRUE,
+                               pageLength = 10,
+                               scroller = TRUE,
+                               scrollY = '500px'))
+})
+```
+
+
+# World Cup and FIFA Ranking {data-icon="fa-sort-numeric-up"}
+
+## Column {data-width="100"}
+Overall FIFA ranking points are expected to be a good predictor of performance at the World Cup and they did well in 2022. However, there were some suprises: especially, the underdog Morocco making it to the semis!
+
+###
+
+```{r}
+# Filter matches for the 2022 World Cup
+world_cup_2022_matches <- matches %>%
+  filter(Year == 2022) %>%
+  filter(Round != "Third-place match") %>%
+  dplyr::select(home_team, away_team)
+
+# Count the number of games played by each team
+games_played <- world_cup_2022_matches %>%
+  bind_rows(world_cup_2022_matches %>% rename(team = home_team), 
+            world_cup_2022_matches %>% rename(team = away_team)) %>%
+  group_by(team) %>%
+  summarise(games = n()) %>%
+  filter(!is.na(team))
+
+
+# Associate labels based on the number of games
+games_played <- games_played %>%
+  mutate(label = case_when(
+    games == 3 ~ "Eliminated in Group Stage",
+    games == 4 ~ "Round of 16",
+    games == 5 ~ "Quarterfinal",
+    games == 6 ~ "Semifinal",
+    games == 7 ~ "Finalist",
+    TRUE ~ NA_character_
+  ))
+
+#  Determine the winner and update the dataframe
+winner <- summary %>%
+  filter(Year == 2022) %>%
+  dplyr::select(Champion)
+
+games_played <- games_played %>%
+  mutate(label = if_else(team == winner$Champion, "Champion", label)) %>%
+  mutate(games = if_else(team == winner$Champion, 8, games))
+
+# Merge with rankings to get the points
+rankings_2022 <- rankings %>%
+  filter(team %in% unique(games_played$team)) %>%
+  dplyr::select(team,points)
+
+merged_data <- left_join(games_played, rankings_2022, by = "team")
+
+# Create a scatterplor
+library(ggrepel)
+renderPlot({ggplot(merged_data, aes(x = points, y = reorder(label, games), label=team)) +
+  geom_point() +
+  geom_text_repel(hjust = 1) +
+  labs(title = "2022 World Cup Run vs FIFA Ranking",
+       x = "Ranking Points",
+       y = "Progress at 2022 World Cup",
+       caption = "Data Source: FIFA Rankings and Qatar 2022 World Cup") +
+  theme_minimal() +
+  scale_y_discrete(labels = c(
+    "Eliminated in Group Stage" = "Eliminated in Group Stage",
+    "Quarterfinal" = "Quarterfinal",
+    "Semifinal" = "Semifinal",
+    "Finalist" = "Finalist",
+    "Champion" = "Champion"
+  ))
+})
+```
+
+# Winners {data-icon="fa-trophy"}
+
+## Column {data-height=10 data-width=200 .tabset .tab-fade}
+
+### Overall
+
+```{r}
+# Aggregate the data to count the number of wins for each team
+team_wins <- summary %>%
+  group_by(Champion) %>%
+  summarise(Wins = n())
+
+# Create a horizontal bar plot
+renderPlot({ggplot(team_wins, aes(x = Wins, y = reorder(Champion, Wins))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Number of Wins by Country",
+       x = "Number of Wins",
+       y = "Team",
+       caption = "Data Source: World Cup Summary") +
+  theme_minimal()
+})
+```
+
+### When not hosting 
+
+```{r}
+# Aggregate the data to count the number of wins for each team
+team_wins_away <- summary %>%
+  filter(Host!=Champion) %>%
+  group_by(Champion) %>%
+  summarise(Wins = n())
+
+# Create a horizontal bar plot
+renderPlot({ggplot(team_wins_away, aes(x = Wins, y = reorder(Champion, Wins))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Number of Wins by Country when not hosting the World Cup",
+       x = "Number of Wins",
+       y = "Team",
+       caption = "Data Source: World Cup Summary") +
+  theme_minimal()
+})
+```
+
+# Top Scorer {data-icon="fa-futbol"}
+
+## Column {data-width=100}
+
+###
+Plot shows the top-scorer for each World Cup with the following number of teams. Use slider to change selection
+```{r}
+# Get unique values of Teams from the summary dataset
+team_choices <- unique(summary$Teams)
+
+# Add Slider
+sliderInput("teamsSlider", "select Number of Teams", 
+                min = min(team_choices), 
+                max = max(team_choices), 
+                value = min(team_choices),
+                step = 1)
+  
+# Reactive expression to filter the summary dataset based on the selected number of teams
+filtered_summary <- reactive({
+    summary %>%
+      filter(Teams == input$teamsSlider) %>%
+      separate(TopScorrer, into = c("Name", "Goals"), sep = " - ", convert = TRUE) %>%
+      arrange(desc(Goals), Year) 
+})
+
+# Render the horizontal bar plot
+renderPlot({
+    ggplot(filtered_summary(), aes(x = Goals, y = reorder(paste(Name, "(", Year, ")"),Goals))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    labs(title = paste("Top Scorers in World Cup with", input$teamsSlider, "Teams"),
+       x = "Number of Goals",
+       y = "Top Scorers (Year)",
+       caption = "Data Source: World Cup Summary") +
+    theme_minimal()
+  
+}, height = 300)
+
+```
+
+# Analysis {data-icon="fa-chart-line"}
+
+## Column {data-height=100}
+
+**Question: has scoring at the World Cup gotten harder over the years?**
+
+At the last soccer world cup (Qatar 2022), French Kylian Mbappé was the top scorer with 8 goals in 7 games. To find a better performance, we need to look back to German Gerd Müller who scored 10 goals in only 6 games in 1970. The all-time goalscorer in a single edition is Just Fontaine who scored 13 goals in 6 games in 1958. His record has stood for 16 editions and nobody has even come close. Why? Has scoring gotten harder because of an increase attention to defensive tactics?
+
+**Data Visualization**
+```{r}
+goals_per_game <- matches %>%
+  group_by(Year) %>%
+  summarise(GoalsPerGame = sum(home_score + away_score) / n())
+
+# Create a bar plot
+renderPlot({ggplot(goals_per_game, aes(x = Year, y = GoalsPerGame)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Goals Per Game in World Cup Matches",
+       x = "Year",
+       y = "Goals Per Game",
+       caption = "Data Source: World Cup Matches") +
+  theme_minimal()
+})
+```
+
+**Linear Regression**
+```{r}
+linear_model <- lm(GoalsPerGame ~ Year, data = goals_per_game)
+
+renderPrint({
+  summary(linear_model)
+})
+
+renderPlot({ggplot(goals_per_game, aes(x = Year, y = GoalsPerGame)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +
+  labs(title = "Scatter Plot with Line of Best Fit",
+       x = "Year",
+       y = "Goals Per Game",
+       caption = "Data Source: World Cup Matches") +
+  theme_minimal()
+})
+```
+
+**Spline**
+
+While linear regression shows a negatively sloped line of best-fit with a significant coefficient, when we look at the scatterplot vs best-fit line we can tell that the line doesn't actually do a great job at fitting the data. In particular, it seems that the goals per game were initially increasing before the Second World War, then they satrted decreasing as World Cup resumed until 1970, after which they appear to be fluctuating around similar values. Let us see if this trend can be captured with a spline with cutoff years 1950 and 1970.
+
+```{r}
+library(multcomp)
+# Create appropriate variables 
+goals_per_game <- goals_per_game %>%
+  mutate(X2 = case_when(Year - 1950 > 0 ~ Year - 1950, TRUE ~ 0),
+         X3 = case_when(Year - 1970 > 0 ~ Year - 1970, TRUE ~ 0))
+
+# Implement spline
+spline_model <- lm(GoalsPerGame ~ Year + X2 + X3, data = goals_per_game)
+
+# Extract coefficients
+b0 <- coef(spline_model)[1]
+b1 <- coef(spline_model)[2]
+b2 <- coef(spline_model)[3]
+b3 <- coef(spline_model)[4]
+
+# Testing for the slope after 1970
+hyp <- glht(spline_model, linfct = "Year + X2 + X3 = 0")
+
+# Print hypothesis test results
+renderPrint({summary(hyp)})
+
+
+# Calculate predictions
+goals_per_game$predicted <- b0 + b1 * goals_per_game$Year + b2 * goals_per_game$X2 + b3 * goals_per_game$X3
+
+
+# Create scatter plot with the fitted line using ggplot2
+renderPlot({ggplot(goals_per_game, aes(x = Year, y = GoalsPerGame)) +
+  geom_point() +
+    geom_line(data = goals_per_game, aes(x = Year, y = predicted), color = "purple") +
+  
+  # Add titles and labels
+  ggtitle("Spline of Goals Per Game Over the Years") +
+  labs(subtitle = "Broken-line with cutoff points in 1950 and 1970",
+       x = "Year",
+       y = "Goals Per Game") +
+  
+  # Add a caption
+  labs(caption = "After 1970, goals per game have not signigicantly decreased at World Cups") +
+  
+  # Customize theme if needed
+  theme_minimal()
+})
+```
+From our analysis, it appears that while it has gotten harder to score at World Cups compared to very early editions, on average scoring difficulty has not changed much since 1970. 
+
+**Scatterplot with Confidence Interval**
+Now, let us produce some more visualization to see if the confidence interval of the average goals per game at the World Cup has changed since 1970.
+```{r}
+total_goals <- dplyr::select(matches, Year, home_score, away_score)
+total_goals <- total_goals %>%
+  filter(Year >= 1970) %>%
+  mutate(total_goals = home_score + away_score) 
+
+# Calculate confidence intervals using base R functions
+confidence_intervals <- total_goals %>%
+  group_by(Year) %>%
+  summarise(mean_goals = mean(total_goals),
+            sd_goals = sd(total_goals),
+            n_goals = n()) %>%
+  mutate(lower_bound = mean_goals - 1.96 * (sd_goals / sqrt(n_goals)),
+         upper_bound = mean_goals + 1.96 * (sd_goals / sqrt(n_goals)))
+
+# Calculate average goals for each year
+average_goals <- total_goals %>%
+  group_by(Year) %>%
+  summarise(average_goals = mean(total_goals))
+
+# Merge average_goals with confidence_intervals
+plot_data <- left_join(average_goals, confidence_intervals, by = "Year")
+
+# Plotting
+
+renderPlot({ggplot(plot_data, aes(x = Year, y = average_goals)) +
+  geom_point() +
+  geom_errorbar(aes(ymin = lower_bound, ymax = upper_bound), width = 0.2) +
+  labs(title = "Average Goals per World Cup Game with confidence interval",
+       x = "Year",
+       y = "Average Goals")
+})
+```
